@@ -113,4 +113,29 @@ class SaleController extends Controller
 
         return response()->json($sale->load('items.product:id,name'), 201);
     }
+
+    public function cancel(Request $request, Sale $sale)
+    {
+        if (! $request->user()->isAdmin() && $sale->user_id !== $request->user()->id) {
+            return response()->json(['message' => 'No tienes permiso para anular esta venta.'], 403);
+        }
+
+        if ($sale->status === 'anulada') {
+            return response()->json(['message' => 'Esta venta ya está anulada.'], 409);
+        }
+
+        if ($sale->shift->closed_at) {
+            return response()->json(['message' => 'No se puede anular una venta de un turno ya cerrado.'], 409);
+        }
+
+        DB::transaction(function () use ($sale) {
+            foreach ($sale->items as $item) {
+                Product::whereKey($item->product_id)->increment('stock', $item->quantity);
+            }
+
+            $sale->update(['status' => 'anulada']);
+        });
+
+        return response()->json($sale->fresh()->load('items.product:id,name'));
+    }
 }
