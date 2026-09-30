@@ -24,18 +24,8 @@ COPY . .
 # Instalar dependencias de Laravel
 RUN composer install --no-dev --optimize-autoloader --no-interaction
 
-# Apache debe servir desde public/
-ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
-RUN sed -ri -e "s!/var/www/html!${APACHE_DOCUMENT_ROOT}!g" /etc/apache2/sites-available/*.conf \
-    && sed -ri -e "s!/var/www/!${APACHE_DOCUMENT_ROOT}!g" /etc/apache2/apache2.conf
-
-# Diagnostico temporal de Apache
-RUN echo "=== 000-default.conf ===" \
-    && cat /etc/apache2/sites-available/000-default.conf \
-    && echo "=== apache2.conf (fragmento Directory) ===" \
-    && grep -A2 "Directory" /etc/apache2/apache2.conf \
-    && echo "=== contenido de public/ ===" \
-    && ls -la /var/www/html/public
+# Reemplaza la configuracion de Apache para permitir .htaccess de Laravel
+COPY apache-vhost.conf /etc/apache2/sites-available/000-default.conf
 
 # Permisos de almacenamiento y caché
 RUN chown -R www-data:www-data storage bootstrap/cache \
