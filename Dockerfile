@@ -1,6 +1,6 @@
 ﻿FROM php:8.3-apache
 
-# Instalar dependencias del sistema y extensiones PHP requeridas
+# Install dependencies and extensions
 RUN apt-get update && apt-get install -y \
     git \
     unzip \
@@ -12,29 +12,25 @@ RUN apt-get update && apt-get install -y \
     && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd \
     && a2enmod rewrite
 
-# Copiar Composer desde la imagen oficial
+# Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Configurar el directorio de trabajo
 WORKDIR /var/www/html
 
-# Copiar archivos del proyecto
 COPY . .
 
-# Instalar dependencias de Laravel
 RUN composer install --no-dev --optimize-autoloader --no-interaction
 
-# Reemplaza la configuracion de Apache para permitir .htaccess de Laravel
-COPY apache-vhost.conf /etc/apache2/sites-available/000-default.conf
+# Point Apache root to public/ and enable AllowOverride All for .htaccess
+ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
+RUN sed -ri -e "s!/var/www/html!${APACHE_DOCUMENT_ROOT}!g" /etc/apache2/sites-available/*.conf \
+    && sed -ri -e "s!/var/www/!${APACHE_DOCUMENT_ROOT}!g" /etc/apache2/apache2.conf \
+    && sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
 
-# Permisos de almacenamiento y caché
+# Permissions
 RUN chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
-# Copiar script de inicio
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
 EXPOSE 80
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["apache2-foreground"]
