@@ -1,6 +1,6 @@
 ﻿FROM php:8.3-apache
 
-# Instalar dependencias y extensiones de PHP
+# Instalar dependencias y extensiones de PHP + Activar SetEnvIfAuthorization
 RUN apt-get update && apt-get install -y \
     git \
     unzip \
@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y \
     zip \
     curl \
     && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd \
-    && a2enmod rewrite
+    && a2enmod rewrite \
+    && echo "SetEnvIfAuthorization On" >> /etc/apache2/apache2.conf
 
 # Copiar Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
@@ -33,6 +34,10 @@ RUN sed -ri -e "s!/var/www/html!${APACHE_DOCUMENT_ROOT}!g" /etc/apache2/sites-av
 RUN chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
+# Copiar y dar permisos al entrypoint
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 EXPOSE 80
 
-CMD ["apache2-foreground"]
+ENTRYPOINT ["docker-entrypoint.sh"]
