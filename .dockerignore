@@ -2,5 +2,4 @@
 .git
 node_modules
 tests
-storage/certs
 vendor
