@@ -15,10 +15,8 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,
 
 Route::get('/debug-headers', function (\Illuminate\Http\Request $request) {
     return response()->json([
-        'authorization_header' => $request->header('Authorization'),
-        'bearer_token' => $request->bearerToken(),
-        'server_http_auth' => $_SERVER['HTTP_AUTHORIZATION'] ?? null,
-        'server_redirect_auth' => $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null,
+        'all_headers' => $request->headers->all(),
+        'all_server' => array_filter($_SERVER, fn($k) => str_contains($k, 'AUTH') || str_contains($k, 'HTTP'), ARRAY_FILTER_USE_KEY),
     ]);
 });
 
