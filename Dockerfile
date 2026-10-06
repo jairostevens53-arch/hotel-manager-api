@@ -1,5 +1,7 @@
 ﻿FROM php:8.3-apache
 
+FROM php:8.3-apache
+
 # Instalar dependencias y extensiones de PHP
 RUN apt-get update && apt-get install -y \
     git \
@@ -23,11 +25,12 @@ COPY . .
 # Instalar dependencias de Laravel
 RUN composer install --no-dev --optimize-autoloader --no-interaction
 
-# Configurar DocumentRoot y reenviar todas las peticiones a index.php (FallbackResource)
+# Configurar DocumentRoot, habilitar .htaccess y pasar el header Authorization
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 RUN sed -ri -e "s!/var/www/html!${APACHE_DOCUMENT_ROOT}!g" /etc/apache2/sites-available/*.conf \
     && sed -ri -e "s!/var/www/!${APACHE_DOCUMENT_ROOT}!g" /etc/apache2/apache2.conf \
-    && echo "FallbackResource /index.php" >> /etc/apache2/sites-available/000-default.conf
+    && printf '<Directory /var/www/html/public>\n    AllowOverride All\n    Require all granted\n</Directory>\nSetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1\n' > /etc/apache2/conf-available/laravel.conf \
+    && a2enconf laravel
 
 # Ajustar permisos
 RUN chown -R www-data:www-data storage bootstrap/cache \
