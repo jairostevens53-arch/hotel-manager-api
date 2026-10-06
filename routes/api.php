@@ -13,6 +13,15 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
 
+Route::get('/debug-headers', function (\Illuminate\Http\Request $request) {
+    return response()->json([
+        'authorization_header' => $request->header('Authorization'),
+        'bearer_token' => $request->bearerToken(),
+        'server_http_auth' => $_SERVER['HTTP_AUTHORIZATION'] ?? null,
+        'server_redirect_auth' => $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null,
+    ]);
+});
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
