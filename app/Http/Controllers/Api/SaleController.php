@@ -15,7 +15,7 @@ class SaleController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Sale::with('items.product:id,name')->latest();
+        $query = Sale::with('items.product:id,name', 'user:id,name')->latest();
 
         if (! $request->user()->isAdmin()) {
             $query->where('user_id', $request->user()->id);
@@ -34,7 +34,7 @@ class SaleController extends Controller
             return response()->json(['message' => 'No tienes permiso para ver esta venta.'], 403);
         }
 
-        return response()->json($sale->load('items.product:id,name'));
+        return response()->json($sale->load('items.product:id,name', 'user:id,name'));
     }
 
     public function store(Request $request)
