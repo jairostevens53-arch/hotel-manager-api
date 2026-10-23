@@ -15,7 +15,7 @@ class SaleController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Sale::with('items.product:id,name', 'user:id,name')->latest();
+        $query = Sale::with('items.product:id,name', 'user:id,name', 'stay.room:id,number')->latest();
 
         if (! $request->user()->isAdmin()) {
             $query->where('user_id', $request->user()->id);
@@ -34,7 +34,7 @@ class SaleController extends Controller
             return response()->json(['message' => 'No tienes permiso para ver esta venta.'], 403);
         }
 
-        return response()->json($sale->load('items.product:id,name', 'user:id,name'));
+        return response()->json($sale->load('items.product:id,name', 'user:id,name', 'stay.room:id,number'));
     }
 
     public function store(Request $request)
@@ -104,6 +104,7 @@ class SaleController extends Controller
                 'user_id' => $user->id,
                 'total' => round($total, 2),
                 'payment_method' => $data['payment_method'],
+                'concept' => 'productos',
             ]);
 
             $sale->items()->createMany($lines);
