@@ -9,7 +9,10 @@ class Sale extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['shift_id', 'user_id', 'total', 'payment_method', 'status'];
+    protected $fillable = [
+        'shift_id', 'user_id', 'stay_id', 'total', 'room_amount',
+        'payment_method', 'concept', 'status',
+    ];
 
     public function shift()
     {
@@ -19,6 +22,11 @@ class Sale extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function stay()
+    {
+        return $this->belongsTo(Stay::class);
     }
 
     public function items()
