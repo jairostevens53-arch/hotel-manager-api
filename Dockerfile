@@ -19,6 +19,9 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
+# Render recoge stdout/stderr del contenedor; env permite sobrescribirlo en el servicio.
+ENV LOG_CHANNEL=stderr
+
 # Copiar archivos del proyecto
 COPY . .
 
