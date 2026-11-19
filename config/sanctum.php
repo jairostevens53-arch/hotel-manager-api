@@ -50,7 +50,8 @@ return [
     |
     */
 
-    'expiration' => null,
+    // Los tokens móviles expiran en 30 días; se pueden ajustar por entorno.
+    'expiration' => env('SANCTUM_EXPIRATION', 43200),
 
     /*
     |--------------------------------------------------------------------------

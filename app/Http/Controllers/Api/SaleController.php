@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Models\InventoryMovement;
 use App\Models\Sale;
 use App\Models\Shift;
 use Illuminate\Http\Request;
@@ -109,6 +110,18 @@ class SaleController extends Controller
 
             $sale->items()->createMany($lines);
 
+            foreach ($lines as $line) {
+                InventoryMovement::create([
+                    'product_id' => $line['product_id'],
+                    'user_id' => $user->id,
+                    'type' => 'salida_venta',
+                    'quantity' => -$line['quantity'],
+                    'reason' => 'Venta de producto',
+                    'reference_type' => 'sale',
+                    'reference_id' => $sale->id,
+                ]);
+            }
+
             return $sale;
         });
 
@@ -129,9 +142,24 @@ class SaleController extends Controller
             return response()->json(['message' => 'No se puede anular una venta de un turno ya cerrado.'], 409);
         }
 
-        DB::transaction(function () use ($sale) {
+        DB::transaction(function () use ($sale, $request) {
+            $sale = Sale::whereKey($sale->id)->lockForUpdate()->with('items')->firstOrFail();
+
+            if ($sale->status === 'anulada') {
+                return;
+            }
+
             foreach ($sale->items as $item) {
                 Product::whereKey($item->product_id)->increment('stock', $item->quantity);
+                InventoryMovement::create([
+                    'product_id' => $item->product_id,
+                    'user_id' => $request->user()->id,
+                    'type' => 'entrada_anulacion',
+                    'quantity' => $item->quantity,
+                    'reason' => 'Reversión por anulación de venta',
+                    'reference_type' => 'sale',
+                    'reference_id' => $sale->id,
+                ]);
             }
 
             $sale->update(['status' => 'anulada']);

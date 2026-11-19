@@ -32,4 +32,9 @@ class Product extends Model
     {
         return $this->belongsTo(Category::class);
     }
+
+    public function inventoryMovements()
+    {
+        return $this->hasMany(InventoryMovement::class);
+    }
 }

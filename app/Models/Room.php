@@ -29,4 +29,14 @@ class Room extends Model
     {
         return $this->hasOne(Stay::class)->where('status', 'activa');
     }
+
+    public function reservations()
+    {
+        return $this->hasMany(Reservation::class);
+    }
+
+    public function tasks()
+    {
+        return $this->hasMany(Task::class);
+    }
 }

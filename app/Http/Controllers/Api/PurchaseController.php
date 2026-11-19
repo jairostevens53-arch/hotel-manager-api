@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Purchase;
+use App\Models\InventoryMovement;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -54,6 +55,16 @@ class PurchaseController extends Controller
             // Sube el stock de cada producto comprado
             foreach ($lines as $line) {
                 Product::whereKey($line['product_id'])->increment('stock', $line['quantity']);
+                InventoryMovement::create([
+                    'product_id' => $line['product_id'],
+                    'user_id' => $request->user()->id,
+                    'type' => 'entrada_compra',
+                    'quantity' => $line['quantity'],
+                    'unit_cost' => $line['unit_cost'],
+                    'reason' => 'Entrada por compra a proveedor',
+                    'reference_type' => 'purchase',
+                    'reference_id' => $purchase->id,
+                ]);
             }
 
             return $purchase;

@@ -22,7 +22,7 @@ class UserController extends Controller
             'name' => ['required', 'string', 'max:100'],
             'email' => ['required', 'email', 'max:150', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'max:100'],
-            'role' => ['required', Rule::in(['admin', 'recepcionista'])],
+            'role' => ['required', Rule::in(['admin', 'recepcionista', 'limpieza', 'mantenimiento'])],
         ]);
 
         $user = User::create($data + ['active' => true]);
@@ -36,7 +36,7 @@ class UserController extends Controller
             'name' => ['sometimes', 'string', 'max:100'],
             'email' => ['sometimes', 'email', 'max:150', Rule::unique('users', 'email')->ignore($user->id)],
             'password' => ['nullable', 'string', 'min:8', 'max:100'],
-            'role' => ['sometimes', Rule::in(['admin', 'recepcionista'])],
+            'role' => ['sometimes', Rule::in(['admin', 'recepcionista', 'limpieza', 'mantenimiento'])],
             'active' => ['sometimes', 'boolean'],
         ]);
 
@@ -52,10 +52,11 @@ class UserController extends Controller
             unset($data['password']);
         }
 
+        $roleChanged = isset($data['role']) && $data['role'] !== $user->role;
         $user->update($data);
 
-        // Si se desactiva o cambia la contraseña, se cierran sus sesiones abiertas
-        if (($data['active'] ?? true) === false || isset($data['password'])) {
+        // Revoca tokens al desactivar la cuenta, cambiar contraseña o cambiar permisos.
+        if (($data['active'] ?? true) === false || isset($data['password']) || $roleChanged) {
             $user->tokens()->delete();
         }
 

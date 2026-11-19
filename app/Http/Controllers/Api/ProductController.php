@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryMovement;
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
@@ -32,7 +34,21 @@ class ProductController extends Controller
 
         $data['min_stock'] = $data['min_stock'] ?? 0;
 
-        $product = Product::create($data);
+        $product = DB::transaction(function () use ($data, $request) {
+            $product = Product::create($data);
+
+            if ($product->stock > 0) {
+                InventoryMovement::create([
+                    'product_id' => $product->id,
+                    'user_id' => $request->user()->id,
+                    'type' => 'stock_inicial',
+                    'quantity' => $product->stock,
+                    'reason' => 'Existencia inicial del producto',
+                ]);
+            }
+
+            return $product;
+        });
 
         return response()->json($product->load('category:id,name'), 201);
     }
@@ -51,11 +67,29 @@ class ProductController extends Controller
             'stock' => ['sometimes', 'integer', 'min:0'],
             'min_stock' => ['sometimes', 'integer', 'min:0'],
             'active' => ['sometimes', 'boolean'],
+            'reason' => ['sometimes', 'nullable', 'string', 'max:200'],
         ]);
 
-        $product->update($data);
+        $reason = $data['reason'] ?? 'Ajuste manual de inventario';
+        unset($data['reason']);
 
-        return response()->json($product->load('category:id,name'));
+        DB::transaction(function () use ($product, $data, $reason, $request) {
+            $locked = Product::whereKey($product->id)->lockForUpdate()->firstOrFail();
+            $previousStock = $locked->stock;
+            $locked->update($data);
+
+            if (array_key_exists('stock', $data) && (int) $data['stock'] !== $previousStock) {
+                InventoryMovement::create([
+                    'product_id' => $locked->id,
+                    'user_id' => $request->user()->id,
+                    'type' => 'ajuste',
+                    'quantity' => (int) $data['stock'] - $previousStock,
+                    'reason' => $reason,
+                ]);
+            }
+        });
+
+        return response()->json($product->fresh()->load('category:id,name'));
     }
 
     public function destroy(Product $product)

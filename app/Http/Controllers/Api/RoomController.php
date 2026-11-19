@@ -11,7 +11,7 @@ class RoomController extends Controller
 {
     public function index(Request $request)
     {
-        $rooms = Room::with('currentStay.rate:id,name,hours')
+        $rooms = Room::with('currentStay.rate:id,name,hours', 'currentStay.guest:id,name')
             ->when($request->boolean('only_active', true), fn ($q) => $q->where('active', true))
             ->when($request->filled('floor'), fn ($q) => $q->where('floor', $request->floor))
             ->orderBy('floor')
@@ -76,10 +76,14 @@ class RoomController extends Controller
             return response()->json(['message' => 'La habitación está ocupada: finaliza la estadía primero.'], 409);
         }
 
-        $isAdmin = $request->user()->isAdmin();
+        $role = $request->user()->role;
 
-        if (! $isAdmin && ! ($room->status === 'limpieza' && $data['status'] === 'disponible')) {
-            return response()->json(['message' => 'Solo puedes marcar como lista una habitación en limpieza.'], 403);
+        if ($role === 'limpieza' && ! ($room->status === 'limpieza' && $data['status'] === 'disponible')) {
+            return response()->json(['message' => 'Limpieza solo puede marcar disponible una habitación en limpieza.'], 403);
+        }
+
+        if ($role === 'mantenimiento' && ! ($room->status === 'mantenimiento' && $data['status'] === 'disponible')) {
+            return response()->json(['message' => 'Mantenimiento solo puede liberar una habitación en mantenimiento.'], 403);
         }
 
         $room->update(['status' => $data['status']]);
