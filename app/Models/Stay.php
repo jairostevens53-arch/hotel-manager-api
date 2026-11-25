@@ -10,7 +10,7 @@ class Stay extends Model
     use HasFactory;
 
     protected $fillable = [
-        'room_id', 'rate_id', 'shift_id', 'user_id', 'guest_id', 'reservation_id',
+        'room_id', 'rate_id', 'rate_units', 'shift_id', 'user_id', 'guest_id', 'reservation_id',
         'guest_name', 'guest_document', 'guests',
         'check_in_at', 'expected_checkout_at', 'checked_out_at',
         'extra_hours', 'status', 'notes',
@@ -20,6 +20,7 @@ class Stay extends Model
     {
         return [
             'guests' => 'integer',
+            'rate_units' => 'integer',
             'extra_hours' => 'integer',
             'check_in_at' => 'datetime',
             'expected_checkout_at' => 'datetime',

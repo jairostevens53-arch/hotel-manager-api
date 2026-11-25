@@ -23,7 +23,7 @@ class StayController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Stay::with('room:id,number,floor', 'rate:id,name', 'user:id,name', 'guest:id,name,document')->latest('check_in_at');
+        $query = Stay::with('room:id,number,floor', 'rate:id,name,price,hours', 'user:id,name', 'guest:id,name,document', 'charges')->latest('check_in_at');
 
         // El recepcionista solo necesita las estadías activas; el admin ve el historial.
         if (! $request->user()->isAdmin()) {
@@ -56,6 +56,7 @@ class StayController extends Controller
             'guest_id' => ['nullable', 'integer', 'exists:guests,id'],
             'room_id' => ['required_without:reservation_id', 'nullable', 'integer', 'exists:rooms,id'],
             'rate_id' => ['required_without:reservation_id', 'nullable', 'integer', 'exists:rates,id'],
+            'rate_units' => ['nullable', 'integer', 'min:1', 'max:30'],
             'guest_name' => ['required_without_all:guest_id,reservation_id', 'nullable', 'string', 'max:150'],
             'guest_document' => ['nullable', 'string', 'max:50'],
             'guests' => ['nullable', 'integer', 'min:1', 'max:10'],
@@ -88,6 +89,7 @@ class StayController extends Controller
                 'guests' => $reservation->guests,
                 'reserved_checkout_at' => $reservation->expected_checkout_at,
                 'reserved_price' => $reservation->agreed_price,
+                'rate_units' => $reservation->rate_units,
             ]);
         } elseif (! empty($data['guest_id'])) {
             $guest = Guest::findOrFail($data['guest_id']);
@@ -133,7 +135,8 @@ class StayController extends Controller
             }
 
             $now = now();
-            $checkoutAt = $data['reserved_checkout_at'] ?? $now->copy()->addHours($rate->hours);
+            $rateUnits = (int) ($data['rate_units'] ?? 1);
+            $checkoutAt = $data['reserved_checkout_at'] ?? $now->copy()->addHours($rate->hours * $rateUnits);
             $conflictingReservation = Reservation::where('room_id', $room->id)
                 ->whereIn('status', ['pendiente', 'confirmada'])
                 ->when($reservation, fn ($query) => $query->where('id', '!=', $reservation->id))
@@ -147,7 +150,7 @@ class StayController extends Controller
 
             // Las reservas cobran solo su saldo al entrar; las estadías directas
             // cobran el total de la tarifa en este momento.
-            $roomTotal = round((float) ($data['reserved_price'] ?? $rate->price), 2);
+            $roomTotal = round((float) ($data['reserved_price'] ?? ($rate->price * $rateUnits)), 2);
             $paidBefore = $reservation
                 ? (float) $reservation->sales()->where('status', 'completada')->sum('room_amount')
                 : 0.0;
@@ -168,6 +171,7 @@ class StayController extends Controller
             $stay = Stay::create([
                 'room_id' => $room->id,
                 'rate_id' => $rate->id,
+                'rate_units' => $rateUnits,
                 'shift_id' => $shift->id,
                 'user_id' => $user->id,
                 'guest_id' => $guest->id,

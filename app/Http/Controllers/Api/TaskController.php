@@ -53,8 +53,11 @@ class TaskController extends Controller
         $task = DB::transaction(function () use ($data, $request) {
             $room = Room::whereKey($data['room_id'])->lockForUpdate()->firstOrFail();
 
-            if (! $room->active || $room->status === 'ocupada'
-                || ($room->status !== 'disponible' && $room->status !== $data['type'])) {
+            $roomCanReceiveTask = $data['type'] === 'limpieza'
+                ? in_array($room->status, ['disponible', 'limpieza', 'ocupada'], true)
+                : in_array($room->status, ['disponible', 'mantenimiento'], true);
+
+            if (! $room->active || ! $roomCanReceiveTask) {
                 return null;
             }
 
@@ -70,7 +73,11 @@ class TaskController extends Controller
                 'room_status_before' => $room->status,
             ]);
 
-            $room->update(['status' => $data['type']]);
+            // Una limpieza durante una estadía no debe liberar ni cambiar la
+            // habitación ocupada; la tarea queda ligada a la habitación.
+            if ($room->status !== 'ocupada') {
+                $room->update(['status' => $data['type']]);
+            }
 
             return $task;
         });
