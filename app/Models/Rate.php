@@ -9,12 +9,13 @@ class Rate extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'hours', 'price', 'extra_hour_price', 'room_type', 'active'];
+    protected $fillable = ['name', 'hours', 'price', 'extra_hour_price', 'room_type', 'beds', 'active'];
 
     protected function casts(): array
     {
         return [
             'hours' => 'integer',
+            'beds' => 'integer',
             'price' => 'decimal:2',
             'extra_hour_price' => 'decimal:2',
             'active' => 'boolean',

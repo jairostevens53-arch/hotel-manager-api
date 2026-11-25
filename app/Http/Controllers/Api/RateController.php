@@ -15,6 +15,8 @@ class RateController extends Controller
         $onlyActive = $request->user()->isAdmin() ? $request->boolean('only_active', true) : true;
 
         $rates = Rate::when($onlyActive, fn ($q) => $q->where('active', true))
+            ->when($request->filled('room_type'), fn ($q) => $q->where('room_type', $request->query('room_type')))
+            ->when($request->filled('beds'), fn ($q) => $q->where('beds', $request->integer('beds')))
             ->orderBy('hours')
             ->get();
 
@@ -28,8 +30,13 @@ class RateController extends Controller
             'hours' => ['required', 'integer', 'min:1', 'max:168'],
             'price' => ['required', 'numeric', 'min:0'],
             'extra_hour_price' => ['nullable', 'numeric', 'min:0'],
-            'room_type' => ['nullable', Rule::in(['estandar', 'especial'])],
+            'room_type' => ['required', Rule::in(['estandar', 'especial'])],
+            'beds' => ['required', 'integer', 'min:1', 'max:4'],
         ]);
+
+        if ($data['room_type'] === 'estandar' && (int) $data['beds'] !== 1) {
+            return response()->json(['message' => 'Las habitaciones comunes tienen una cama.'], 422);
+        }
 
         $data['extra_hour_price'] = $data['extra_hour_price'] ?? 0;
 
@@ -45,9 +52,20 @@ class RateController extends Controller
             'hours' => ['sometimes', 'integer', 'min:1', 'max:168'],
             'price' => ['sometimes', 'numeric', 'min:0'],
             'extra_hour_price' => ['sometimes', 'numeric', 'min:0'],
-            'room_type' => ['nullable', Rule::in(['estandar', 'especial'])],
+            'room_type' => ['sometimes', 'required', Rule::in(['estandar', 'especial'])],
+            'beds' => ['sometimes', 'required', 'integer', 'min:1', 'max:4'],
             'active' => ['sometimes', 'boolean'],
         ]);
+
+        $roomType = $data['room_type'] ?? $rate->room_type;
+        $beds = $data['beds'] ?? $rate->beds;
+        $active = $data['active'] ?? $rate->active;
+        if ($active && ($roomType === null || $beds === null)) {
+            return response()->json(['message' => 'Una tarifa activa debe tener tipo de habitación y cantidad de camas definidos.'], 422);
+        }
+        if ($roomType === 'estandar' && (int) $beds !== 1) {
+            return response()->json(['message' => 'Las habitaciones comunes tienen una cama.'], 422);
+        }
 
         $rate->update($data);
 

@@ -130,8 +130,8 @@ class StayController extends Controller
 
             $rate = Rate::findOrFail($data['rate_id']);
 
-            if (! $rate->active || ($rate->room_type && $rate->room_type !== $room->type)) {
-                return response()->json(['message' => 'La tarifa elegida no aplica a esta habitación.'], 422);
+            if (! $rate->active || $rate->room_type !== $room->type || (int) $rate->beds !== (int) $room->beds) {
+                return response()->json(['message' => 'La tarifa elegida debe coincidir con el tipo y la cantidad de camas de la habitación.'], 422);
             }
 
             $now = now();

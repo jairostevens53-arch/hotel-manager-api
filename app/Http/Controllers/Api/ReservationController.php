@@ -74,10 +74,10 @@ class ReservationController extends Controller
                 throw ValidationException::withMessages(['guest_id' => ['El huésped no existe o está archivado.']]);
             }
 
-            if (! $rate->active || ($rate->room_type && $rate->room_type !== $data['room_type'])) {
-                throw ValidationException::withMessages(['rate_id' => ['La tarifa no aplica a esta habitación.']]);
+            if (! $rate->active || $rate->room_type !== $data['room_type'] || (int) $rate->beds !== (int) $data['beds']) {
+                throw ValidationException::withMessages(['rate_id' => ['La tarifa debe coincidir con el tipo y la cantidad de camas seleccionadas.']]);
             }
-            if ($data['room_type'] === 'estandar' && $data['beds'] !== 1) {
+            if ($data['room_type'] === 'estandar' && (int) $data['beds'] !== 1) {
                 throw ValidationException::withMessages(['beds' => ['Las habitaciones comunes tienen una cama.']]);
             }
             if (($data['guests'] ?? 1) > $data['beds']) {
