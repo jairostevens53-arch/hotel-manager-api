@@ -12,6 +12,7 @@ use App\Models\Room;
 use App\Models\Sale;
 use App\Models\Shift;
 use App\Models\Stay;
+use App\Models\StayCharge;
 use App\Models\Task;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +23,7 @@ class StayController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Stay::with('room:id,number,floor,type,beds', 'rate:id,name,price,hours,room_type,beds', 'user:id,name', 'guest:id,name,document')->latest('check_in_at');
+        $query = Stay::with('room:id,number,floor,type,beds', 'rate:id,name,price,hours,room_type,beds', 'user:id,name', 'guest:id,name,document', 'charges')->latest('check_in_at');
 
         // El recepcionista solo necesita las estadías activas; el admin ve el historial.
         if (! $request->user()->isAdmin()) {
@@ -40,7 +41,7 @@ class StayController extends Controller
 
     public function show(Stay $stay)
     {
-        $stay->load('room', 'rate', 'user:id,name', 'guest:id,name,document,phone,email', 'reservation', 'sales.items.product:id,name');
+        $stay->load('room', 'rate', 'user:id,name', 'guest:id,name,document,phone,email', 'reservation', 'sales.items.product:id,name', 'charges');
 
         $paid = round((float) $stay->sales()->where('status', 'completada')->sum('total'), 2);
 
@@ -55,10 +56,11 @@ class StayController extends Controller
             'guest_id' => ['nullable', 'integer', 'exists:guests,id'],
             'room_id' => ['required_without:reservation_id', 'nullable', 'integer', 'exists:rooms,id'],
             'rate_id' => ['required_without:reservation_id', 'nullable', 'integer', 'exists:rates,id'],
+            'rate_units' => ['nullable', 'integer', 'min:1', 'max:30'],
             'guest_name' => ['required_without_all:guest_id,reservation_id', 'nullable', 'string', 'max:150'],
             'guest_document' => ['nullable', 'string', 'max:50'],
             'guests' => ['nullable', 'integer', 'min:1', 'max:10'],
-            'payment_method' => ['required', Rule::in(['efectivo', 'tarjeta', 'transferencia'])],
+            'payment_method' => ['nullable', Rule::in(['efectivo', 'tarjeta', 'transferencia'])],
             'notes' => ['nullable', 'string', 'max:500'],
             'items' => ['nullable', 'array'],
             'items.*.product_id' => ['required_with:items', 'integer', 'exists:products,id'],
@@ -87,6 +89,7 @@ class StayController extends Controller
                 'guests' => $reservation->guests,
                 'reserved_checkout_at' => $reservation->expected_checkout_at,
                 'reserved_price' => $reservation->agreed_price,
+                'rate_units' => $reservation->rate_units,
             ]);
         } elseif (! empty($data['guest_id'])) {
             $guest = Guest::findOrFail($data['guest_id']);
@@ -109,6 +112,9 @@ class StayController extends Controller
                 if ($reservation->status !== 'confirmada') {
                     return response()->json(['message' => 'La reserva ya fue procesada.'], 409);
                 }
+            if (! $reservation->room_id) {
+                return response()->json(['message' => 'La reserva todavía no tiene habitación asignada.'], 409);
+            }
             }
 
             // Bloquea la habitación para que dos recepcionistas no la ocupen a la vez
@@ -129,7 +135,8 @@ class StayController extends Controller
             }
 
             $now = now();
-            $checkoutAt = $data['reserved_checkout_at'] ?? $now->copy()->addHours($rate->hours);
+            $rateUnits = (int) ($data['rate_units'] ?? 1);
+            $checkoutAt = $data['reserved_checkout_at'] ?? $now->copy()->addHours($rate->hours * $rateUnits);
             $conflictingReservation = Reservation::where('room_id', $room->id)
                 ->whereIn('status', ['pendiente', 'confirmada'])
                 ->when($reservation, fn ($query) => $query->where('id', '!=', $reservation->id))
@@ -141,10 +148,19 @@ class StayController extends Controller
                 return response()->json(['message' => 'La habitación está reservada para otro huésped durante este horario.'], 409);
             }
 
-            [$lines, $productsTotal] = $this->consumeProducts($data['items'] ?? []);
+            // Las reservas cobran solo su saldo al entrar; las estadías directas
+            // cobran el total de la tarifa en este momento.
+            $roomTotal = round((float) ($data['reserved_price'] ?? ($rate->price * $rateUnits)), 2);
+            $paidBefore = $reservation
+                ? (float) $reservation->sales()->where('status', 'completada')->sum('room_amount')
+                : 0.0;
+            $roomAmount = max(0, round($roomTotal - $paidBefore, 2));
 
-            // El precio de la habitación SIEMPRE sale de la tarifa guardada, nunca del cliente
-            $roomAmount = round((float) ($data['reserved_price'] ?? $rate->price), 2);
+            if (($roomAmount > 0 || ! empty($data['items'])) && empty($data['payment_method'])) {
+                return response()->json(['message' => 'Selecciona el método de pago para cobrar el saldo de entrada.'], 422);
+            }
+
+            [$lines, $productsTotal] = $this->consumeProducts($data['items'] ?? []);
             $guest = ! empty($data['guest_id'])
                 ? Guest::findOrFail($data['guest_id'])
                 : Guest::create([
@@ -155,6 +171,7 @@ class StayController extends Controller
             $stay = Stay::create([
                 'room_id' => $room->id,
                 'rate_id' => $rate->id,
+                'rate_units' => $rateUnits,
                 'shift_id' => $shift->id,
                 'user_id' => $user->id,
                 'guest_id' => $guest->id,
@@ -168,18 +185,20 @@ class StayController extends Controller
                 'notes' => $data['notes'] ?? null,
             ]);
 
-            $sale = Sale::create([
+            $saleTotal = round($productsTotal + $roomAmount, 2);
+            $sale = $saleTotal > 0 ? Sale::create([
                 'shift_id' => $shift->id,
                 'user_id' => $user->id,
                 'stay_id' => $stay->id,
-                'total' => round($productsTotal + $roomAmount, 2),
+                'reservation_id' => $reservation?->id,
+                'total' => $saleTotal,
                 'room_amount' => $roomAmount,
                 'payment_method' => $data['payment_method'],
-                'concept' => 'estancia',
+                'concept' => $reservation ? 'saldo_reserva' : 'estancia',
                 'status' => 'completada',
-            ]);
+            ]) : null;
 
-            if ($lines) {
+            if ($lines && $sale) {
                 $sale->items()->createMany($lines);
                 foreach ($lines as $line) {
                     InventoryMovement::create([
@@ -202,7 +221,7 @@ class StayController extends Controller
 
             return response()->json([
                 'stay' => $stay->load('room', 'rate'),
-                'sale' => $sale->load('items.product:id,name'),
+                'sale' => $sale?->load('items.product:id,name'),
             ], 201);
         });
     }
@@ -263,15 +282,19 @@ class StayController extends Controller
     public function charge(Request $request, Stay $stay)
     {
         $data = $request->validate([
-            'amount' => ['required', 'numeric', 'gt:0'],
+            'amount' => ['nullable', 'numeric', 'gt:0', 'required_without:items'],
             'description' => ['nullable', 'string', 'max:200'],
-            'payment_method' => ['required', Rule::in(['efectivo', 'tarjeta', 'transferencia'])],
+            'items' => ['nullable', 'array', 'min:1'],
+            'items.*.product_id' => ['required_with:items', 'integer', 'exists:products,id'],
+            'items.*.quantity' => ['required_with:items', 'integer', 'min:1'],
+            'pay_now' => ['required', 'boolean'],
+            'payment_method' => ['required_if:pay_now,true', Rule::in(['efectivo', 'tarjeta', 'transferencia'])],
         ]);
 
         $user = $request->user();
-        $shift = $this->openShift($user->id);
+        $shift = ! empty($data['pay_now']) ? $this->openShift($user->id) : null;
 
-        if (! $shift) {
+        if (! empty($data['pay_now']) && ! $shift) {
             return response()->json(['message' => 'Debes abrir un turno antes de cobrar.'], 409);
         }
 
@@ -282,37 +305,100 @@ class StayController extends Controller
                 return response()->json(['message' => 'La estadía ya no está activa.'], 409);
             }
 
-            $amount = round((float) $data['amount'], 2);
-
-            $sale = Sale::create([
-                'shift_id' => $shift->id,
-                'user_id' => $user->id,
-                'stay_id' => $stay->id,
-                'total' => $amount,
-                'room_amount' => $amount,
-                'payment_method' => $data['payment_method'],
-                'concept' => 'cargo_adicional',
-                'status' => 'completada',
-            ]);
-
-            // Deja constancia del motivo en las notas de la estadía
-            if (! empty($data['description'])) {
-                $line = now()->format('d/m H:i') . ' - ' . $data['description'] . ' ($' . number_format($amount, 2) . ')';
-                $stay->update(['notes' => trim(($stay->notes ? $stay->notes . "\n" : '') . $line)]);
+            [$lines, $productsTotal] = $this->consumeProducts($data['items'] ?? []);
+            $amount = round((float) ($data['amount'] ?? 0) + $productsTotal, 2);
+            if ($amount <= 0) {
+                throw ValidationException::withMessages(['amount' => ['El cargo debe ser mayor que cero.']]);
             }
 
-            return response()->json(['stay' => $stay->fresh(), 'sale' => $sale], 201);
+            $sale = null;
+            if (! empty($data['pay_now'])) {
+                $sale = Sale::create([
+                    'shift_id' => $shift->id,
+                    'user_id' => $user->id,
+                    'stay_id' => $stay->id,
+                    'total' => $amount,
+                    'room_amount' => $amount,
+                    'payment_method' => $data['payment_method'],
+                    'concept' => 'cargo_adicional',
+                    'status' => 'completada',
+                ]);
+                if ($lines) $sale->items()->createMany($lines);
+            }
+
+            $charge = StayCharge::create([
+                'stay_id' => $stay->id,
+                'user_id' => $user->id,
+                'sale_id' => $sale?->id,
+                'description' => $data['description'] ?? null,
+                'amount' => $amount,
+                'items' => $lines ?: null,
+                'paid_at' => $sale ? now() : null,
+            ]);
+
+            foreach ($lines as $line) {
+                InventoryMovement::create([
+                    'product_id' => $line['product_id'],
+                    'user_id' => $user->id,
+                    'type' => 'salida_venta',
+                    'quantity' => -$line['quantity'],
+                    'reason' => 'Consumo registrado en estadía',
+                    'reference_type' => $sale ? 'sale' : 'stay_charge',
+                    'reference_id' => $sale?->id ?? $charge->id,
+                ]);
+            }
+
+            return response()->json([
+                'stay' => $stay->fresh(),
+                'charge' => $charge,
+                'sale' => $sale?->load('items.product:id,name'),
+            ], 201);
         });
     }
 
     // Salida: finaliza la estadía y manda la habitación a limpieza.
     public function checkout(Request $request, Stay $stay)
     {
-        return DB::transaction(function () use ($stay, $request) {
+        $data = $request->validate([
+            'payment_method' => ['nullable', Rule::in(['efectivo', 'tarjeta', 'transferencia'])],
+        ]);
+        $user = $request->user();
+
+        return DB::transaction(function () use ($stay, $request, $data, $user) {
             $stay = Stay::whereKey($stay->id)->lockForUpdate()->first();
 
             if ($stay->status !== 'activa') {
                 return response()->json(['message' => 'La estadía ya fue finalizada.'], 409);
+            }
+
+            $unpaidCharges = $stay->charges()->whereNull('paid_at')->lockForUpdate()->get();
+            $balance = round((float) $unpaidCharges->sum('amount'), 2);
+            $sale = null;
+            if ($balance > 0) {
+                if (empty($data['payment_method'])) {
+                    return response()->json(['message' => 'Elige el método de pago para liquidar los cargos pendientes.'], 422);
+                }
+                $shift = $this->openShift($user->id);
+                if (! $shift) {
+                    return response()->json(['message' => 'Debes abrir un turno antes de cobrar el saldo de la estadía.'], 409);
+                }
+
+                $sale = Sale::create([
+                    'shift_id' => $shift->id,
+                    'user_id' => $user->id,
+                    'stay_id' => $stay->id,
+                    'total' => $balance,
+                    'room_amount' => $balance,
+                    'payment_method' => $data['payment_method'],
+                    'concept' => 'cargos_estadia',
+                    'status' => 'completada',
+                ]);
+
+                $items = $unpaidCharges->flatMap(fn ($charge) => $charge->items ?? [])->values()->all();
+                if ($items) $sale->items()->createMany($items);
+                foreach ($unpaidCharges as $charge) {
+                    $charge->update(['paid_at' => now(), 'sale_id' => $sale->id]);
+                }
             }
 
             $stay->update(['status' => 'finalizada', 'checked_out_at' => now()]);
@@ -331,7 +417,11 @@ class StayController extends Controller
                 ]);
             }
 
-            return response()->json($stay->fresh()->load('room', 'rate'));
+            return response()->json([
+                'stay' => $stay->fresh()->load('room', 'rate', 'charges'),
+                'sale' => $sale?->load('items.product:id,name'),
+                'settled_amount' => $balance,
+            ]);
         });
     }
 

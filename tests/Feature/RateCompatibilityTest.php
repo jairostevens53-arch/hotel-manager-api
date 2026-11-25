@@ -128,6 +128,8 @@ class RateCompatibilityTest extends TestCase
             $this->postJson('/api/reservations', [
                 'guest_id' => $guest->id,
                 'room_id' => $room->id,
+                'room_type' => 'especial',
+                'beds' => 2,
                 'rate_id' => $rate->id,
                 'check_in_at' => now()->addHour()->toIso8601String(),
                 'expected_checkout_at' => now()->addHours(13)->toIso8601String(),
