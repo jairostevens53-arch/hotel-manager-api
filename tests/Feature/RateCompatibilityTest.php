@@ -35,6 +35,15 @@ class RateCompatibilityTest extends TestCase
             $this->assertSame($beds, $response->json('beds'));
         }
 
+        foreach ([['estandar', 1], ['especial', 2], ['especial', 3], ['especial', 4]] as $index => [$type, $beds]) {
+            $this->getJson("/api/rates?room_type={$type}&beds={$beds}")
+                ->assertOk()
+                ->assertJsonCount(1)
+                ->assertJsonPath('0.id', $ids[$index])
+                ->assertJsonPath('0.hours', 12)
+                ->assertJsonPath('0.price', number_format(41 + $index, 2, '.', ''));
+        }
+
         $this->getJson('/api/rates?room_type=especial&beds=4')
             ->assertOk()
             ->assertJsonCount(1)
