@@ -19,7 +19,16 @@ class Rate extends Model
             'price' => 'decimal:2',
             'extra_hour_price' => 'decimal:2',
             'active' => 'boolean',
+            'beds' => 'integer',
         ];
+    }
+
+    public function appliesToRoom(Room $room): bool
+    {
+        $expectedBeds = $room->type === 'estandar' ? 1 : $room->beds;
+
+        return $this->room_type === $room->type
+            && (int) $this->beds === (int) $expectedBeds;
     }
 
     public function stays()
