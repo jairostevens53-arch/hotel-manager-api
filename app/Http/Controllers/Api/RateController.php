@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Rate;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class RateController extends Controller
 {
@@ -14,8 +15,22 @@ class RateController extends Controller
         // Los recepcionistas solo ven las tarifas activas; el admin puede pedir todas.
         $onlyActive = $request->user()->isAdmin() ? $request->boolean('only_active', true) : true;
 
-        $rates = Rate::when($onlyActive, fn ($q) => $q->where('active', true))
+        $filters = $request->validate([
+            'room_type' => ['sometimes', 'required', Rule::in(['estandar', 'especial'])],
+            'beds' => ['sometimes', 'required', 'integer', 'min:1', 'max:10'],
+        ]);
+
+        if (($filters['room_type'] ?? null) === 'estandar' && isset($filters['beds']) && (int) $filters['beds'] !== 1) {
+            throw ValidationException::withMessages(['beds' => ['Las tarifas estándar deben tener exactamente 1 cama.']]);
+        }
+
+        $rates = Rate::query()
+            ->when($onlyActive, fn ($q) => $q->where('active', true))
+            ->when(isset($filters['room_type']), fn ($q) => $q->where('room_type', $filters['room_type']))
+            ->when(isset($filters['beds']), fn ($q) => $q->where('beds', (int) $filters['beds']))
             ->orderBy('hours')
+            ->orderBy('room_type')
+            ->orderBy('beds')
             ->get();
 
         return response()->json($rates);
@@ -28,12 +43,19 @@ class RateController extends Controller
             'hours' => ['required', 'integer', 'min:1', 'max:168'],
             'price' => ['required', 'numeric', 'min:0'],
             'extra_hour_price' => ['nullable', 'numeric', 'min:0'],
-            'room_type' => ['nullable', Rule::in(['estandar', 'especial'])],
+            'room_type' => ['required', Rule::in(['estandar', 'especial'])],
+            'beds' => ['required', 'integer', 'min:1', 'max:4'],
+            'active' => ['sometimes', 'boolean'],
         ]);
 
-        $data['extra_hour_price'] = $data['extra_hour_price'] ?? 0;
+        if ($data['room_type'] === 'estandar' && (int) $data['beds'] !== 1) {
+            throw ValidationException::withMessages(['beds' => ['Las tarifas estándar deben tener exactamente 1 cama.']]);
+        }
 
-        $rate = Rate::create($data + ['active' => true]);
+        $data['extra_hour_price'] = $data['extra_hour_price'] ?? 0;
+        $data['active'] = $data['active'] ?? true;
+
+        $rate = Rate::create($data);
 
         return response()->json($rate, 201);
     }
@@ -45,9 +67,19 @@ class RateController extends Controller
             'hours' => ['sometimes', 'integer', 'min:1', 'max:168'],
             'price' => ['sometimes', 'numeric', 'min:0'],
             'extra_hour_price' => ['sometimes', 'numeric', 'min:0'],
-            'room_type' => ['nullable', Rule::in(['estandar', 'especial'])],
+            'room_type' => ['sometimes', 'required', Rule::in(['estandar', 'especial'])],
+            'beds' => ['sometimes', 'required', 'integer', 'min:1', 'max:4'],
             'active' => ['sometimes', 'boolean'],
         ]);
+
+        $nextType = $data['room_type'] ?? $rate->room_type;
+        $nextBeds = $data['beds'] ?? $rate->beds;
+        if (! in_array($nextType, ['estandar', 'especial'], true) || ! $nextBeds || $nextBeds < 1 || $nextBeds > 4) {
+            throw ValidationException::withMessages(['room_type' => ['Completa el tipo de habitación y asigna entre 1 y 4 camas antes de guardar o activar la tarifa.']]);
+        }
+        if ($nextType === 'estandar' && (int) $nextBeds !== 1) {
+            throw ValidationException::withMessages(['beds' => ['Las tarifas estándar deben tener exactamente 1 cama.']]);
+        }
 
         $rate->update($data);
 

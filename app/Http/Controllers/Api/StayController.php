@@ -22,7 +22,7 @@ class StayController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Stay::with('room:id,number,floor', 'rate:id,name', 'user:id,name', 'guest:id,name,document')->latest('check_in_at');
+        $query = Stay::with('room:id,number,floor,type,beds', 'rate:id,name,price,hours,room_type,beds', 'user:id,name', 'guest:id,name,document')->latest('check_in_at');
 
         // El recepcionista solo necesita las estadías activas; el admin ve el historial.
         if (! $request->user()->isAdmin()) {
@@ -124,7 +124,7 @@ class StayController extends Controller
 
             $rate = Rate::findOrFail($data['rate_id']);
 
-            if (! $rate->active || ($rate->room_type && $rate->room_type !== $room->type)) {
+            if (! $rate->active || ! $rate->appliesToRoom($room)) {
                 return response()->json(['message' => 'La tarifa elegida no aplica a esta habitación.'], 422);
             }
 

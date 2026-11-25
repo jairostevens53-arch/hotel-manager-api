@@ -16,7 +16,7 @@ class ReservationController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Reservation::with('guest:id,name,document,phone,email', 'room:id,number,floor,type', 'rate:id,name,price,hours', 'creator:id,name')
+        $query = Reservation::with('guest:id,name,document,phone,email', 'room:id,number,floor,type,beds', 'rate:id,name,price,hours,room_type,beds', 'creator:id,name')
             ->latest('check_in_at');
 
         if ($request->filled('status')) {
@@ -67,7 +67,7 @@ class ReservationController extends Controller
             if (($data['guests'] ?? 1) > $room->beds) {
                 throw ValidationException::withMessages(['guests' => ['La cantidad de huéspedes supera la capacidad de la habitación.']]);
             }
-            if (! $rate->active || ($rate->room_type && $rate->room_type !== $room->type)) {
+            if (! $rate->active || ! $rate->appliesToRoom($room)) {
                 throw ValidationException::withMessages(['rate_id' => ['La tarifa no aplica a esta habitación.']]);
             }
 
