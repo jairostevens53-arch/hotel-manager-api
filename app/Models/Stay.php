@@ -61,4 +61,9 @@ class Stay extends Model
     {
         return $this->hasMany(Sale::class);
     }
+
+    public function charges()
+    {
+        return $this->hasMany(StayCharge::class);
+    }
 }

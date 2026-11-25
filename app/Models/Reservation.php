@@ -8,7 +8,8 @@ class Reservation extends Model
 {
     protected $fillable = [
         'guest_id', 'room_id', 'rate_id', 'created_by', 'stay_id',
-        'check_in_at', 'expected_checkout_at', 'guests', 'agreed_price', 'status', 'notes',
+        'room_type', 'beds', 'rate_units', 'check_in_at', 'expected_checkout_at',
+        'guests', 'agreed_price', 'status', 'notes',
     ];
 
     protected function casts(): array
@@ -17,6 +18,8 @@ class Reservation extends Model
             'check_in_at' => 'datetime',
             'expected_checkout_at' => 'datetime',
             'guests' => 'integer',
+            'beds' => 'integer',
+            'rate_units' => 'integer',
             'agreed_price' => 'decimal:2',
         ];
     }
@@ -44,5 +47,10 @@ class Reservation extends Model
     public function stay()
     {
         return $this->hasOne(Stay::class);
+    }
+
+    public function sales()
+    {
+        return $this->hasMany(Sale::class);
     }
 }
