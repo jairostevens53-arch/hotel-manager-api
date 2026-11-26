@@ -23,7 +23,7 @@ class ReservationController extends Controller
         $query = Reservation::withSum([
             'sales as paid_amount' => fn ($sales) => $sales->where('status', 'completada'),
         ], 'room_amount')
-            ->with('guest:id,name,document,phone,email', 'room:id,number,floor,type,beds', 'rate:id,name,price,hours', 'creator:id,name')
+            ->with('guest:id,name,document,phone,email', 'room:id,number,floor,type,beds', 'rate:id,name,price,hours,room_type,beds', 'creator:id,name')
             ->latest('check_in_at');
 
         if ($request->filled('status')) {
@@ -73,9 +73,15 @@ class ReservationController extends Controller
             if (! $guest) {
                 throw ValidationException::withMessages(['guest_id' => ['El huésped no existe o está archivado.']]);
             }
+            if (blank($guest->document) || blank($guest->phone)) {
+                throw ValidationException::withMessages([
+                    'guest_id' => ['Para crear una reserva, el huésped debe tener documento y teléfono registrados.'],
+                ]);
+            }
 
-            if (! $rate->active || $rate->room_type !== $data['room_type'] || (int) $rate->beds !== (int) $data['beds']) {
-                throw ValidationException::withMessages(['rate_id' => ['La tarifa debe coincidir con el tipo y la cantidad de camas seleccionadas.']]);
+            $expectedRateBeds = $data['room_type'] === 'estandar' ? 1 : $data['beds'];
+            if (! $rate->active || $rate->room_type !== $data['room_type'] || (int) $rate->beds !== $expectedRateBeds) {
+                throw ValidationException::withMessages(['rate_id' => ['La tarifa no aplica a esta habitación.']]);
             }
             if ($data['room_type'] === 'estandar' && (int) $data['beds'] !== 1) {
                 throw ValidationException::withMessages(['beds' => ['Las habitaciones comunes tienen una cama.']]);

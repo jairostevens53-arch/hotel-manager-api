@@ -23,7 +23,7 @@ class StayController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Stay::with('room:id,number,floor', 'rate:id,name,price,hours', 'user:id,name', 'guest:id,name,document', 'charges')->latest('check_in_at');
+        $query = Stay::with('room:id,number,floor,type,beds', 'rate:id,name,price,hours,room_type,beds', 'user:id,name', 'guest:id,name,document', 'charges')->latest('check_in_at');
 
         // El recepcionista solo necesita las estadías activas; el admin ve el historial.
         if (! $request->user()->isAdmin()) {
@@ -57,7 +57,7 @@ class StayController extends Controller
             'room_id' => ['required_without:reservation_id', 'nullable', 'integer', 'exists:rooms,id'],
             'rate_id' => ['required_without:reservation_id', 'nullable', 'integer', 'exists:rates,id'],
             'rate_units' => ['nullable', 'integer', 'min:1', 'max:30'],
-            'guest_name' => ['required_without_all:guest_id,reservation_id', 'nullable', 'string', 'max:150'],
+            'guest_name' => ['nullable', 'string', 'max:150'],
             'guest_document' => ['nullable', 'string', 'max:50'],
             'guests' => ['nullable', 'integer', 'min:1', 'max:10'],
             'payment_method' => ['nullable', Rule::in(['efectivo', 'tarjeta', 'transferencia'])],
@@ -130,8 +130,8 @@ class StayController extends Controller
 
             $rate = Rate::findOrFail($data['rate_id']);
 
-            if (! $rate->active || $rate->room_type !== $room->type || (int) $rate->beds !== (int) $room->beds) {
-                return response()->json(['message' => 'La tarifa elegida debe coincidir con el tipo y la cantidad de camas de la habitación.'], 422);
+            if (! $rate->active || ! $rate->appliesToRoom($room)) {
+                return response()->json(['message' => 'La tarifa elegida no aplica a esta habitación.'], 422);
             }
 
             $now = now();
@@ -163,10 +163,12 @@ class StayController extends Controller
             [$lines, $productsTotal] = $this->consumeProducts($data['items'] ?? []);
             $guest = ! empty($data['guest_id'])
                 ? Guest::findOrFail($data['guest_id'])
-                : Guest::create([
-                    'name' => $data['guest_name'],
-                    'document' => $data['guest_document'] ?? null,
-                ]);
+                : (! empty($data['guest_name'])
+                    ? Guest::create([
+                        'name' => $data['guest_name'],
+                        'document' => $data['guest_document'] ?? null,
+                    ])
+                    : null);
 
             $stay = Stay::create([
                 'room_id' => $room->id,
@@ -174,9 +176,9 @@ class StayController extends Controller
                 'rate_units' => $rateUnits,
                 'shift_id' => $shift->id,
                 'user_id' => $user->id,
-                'guest_id' => $guest->id,
+                'guest_id' => $guest?->id,
                 'reservation_id' => $reservation?->id,
-                'guest_name' => $data['guest_name'],
+                'guest_name' => $data['guest_name'] ?? 'Cliente sin registrar',
                 'guest_document' => $data['guest_document'] ?? null,
                 'guests' => $data['guests'] ?? 1,
                 'check_in_at' => $now,

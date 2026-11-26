@@ -19,7 +19,6 @@ class Rate extends Model
             'price' => 'decimal:2',
             'extra_hour_price' => 'decimal:2',
             'active' => 'boolean',
-            'beds' => 'integer',
         ];
     }
 

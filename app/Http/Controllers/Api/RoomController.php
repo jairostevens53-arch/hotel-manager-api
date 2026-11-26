@@ -12,8 +12,9 @@ class RoomController extends Controller
     public function index(Request $request)
     {
         $rooms = Room::with([
-            'currentStay.rate:id,name,hours',
-            'currentStay.guest:id,name',
+            'currentStay:id,room_id,rate_id,guest_id,guest_name,guest_document,guests,check_in_at,expected_checkout_at,notes',
+            'currentStay.rate:id,name,price,hours',
+            'currentStay.guest:id,name,document,phone,email',
             'tasks' => fn ($query) => $query->whereIn('status', ['pendiente', 'asignada', 'en_progreso'])
                 ->select('id', 'room_id', 'type', 'status', 'assigned_to', 'description'),
         ])

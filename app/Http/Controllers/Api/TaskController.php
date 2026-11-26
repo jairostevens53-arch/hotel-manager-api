@@ -18,7 +18,12 @@ class TaskController extends Controller
         $query = Task::with('room:id,number,floor,status', 'requester:id,name', 'assignee:id,name,role')->latest();
 
         if (in_array($user->role, ['limpieza', 'mantenimiento'], true)) {
-            $query->where('assigned_to', $user->id)->where('type', $user->role);
+            $query->where('type', $user->role)->where(function ($tasks) use ($user) {
+                $tasks->where('assigned_to', $user->id)
+                    ->orWhere(fn ($unassigned) => $unassigned
+                        ->whereNull('assigned_to')
+                        ->where('status', 'pendiente'));
+            });
         } elseif ($request->filled('assigned_to')) {
             $query->where('assigned_to', $request->query('assigned_to'));
         }
@@ -95,16 +100,20 @@ class TaskController extends Controller
             'assigned_to' => ['required', 'integer', 'exists:users,id'],
         ]);
 
-        if (! in_array($task->status, ['pendiente', 'asignada'], true)) {
-            return response()->json(['message' => 'No puedes reasignar una tarea que ya está en progreso o finalizada.'], 409);
-        }
         if (! $this->assigneeMatchesType($data['assigned_to'], $task->type)) {
             return response()->json(['message' => 'El usuario asignado no tiene el rol requerido para esta tarea.'], 422);
         }
 
-        $task->update(['assigned_to' => $data['assigned_to'], 'status' => 'asignada']);
+        return DB::transaction(function () use ($data, $task) {
+            $lockedTask = Task::whereKey($task->id)->lockForUpdate()->firstOrFail();
+            if (! in_array($lockedTask->status, ['pendiente', 'asignada'], true)) {
+                return response()->json(['message' => 'No puedes reasignar una tarea que ya está en progreso o finalizada.'], 409);
+            }
 
-        return response()->json($task->fresh()->load('room', 'assignee:id,name,role'));
+            $lockedTask->update(['assigned_to' => $data['assigned_to'], 'status' => 'asignada']);
+
+            return response()->json($lockedTask->fresh()->load('room', 'assignee:id,name,role'));
+        });
     }
 
     public function updateStatus(Request $request, Task $task)
@@ -117,27 +126,19 @@ class TaskController extends Controller
         $user = $request->user();
         $isManager = in_array($user->role, ['admin', 'recepcionista'], true);
 
-        if (! $isManager && ((int) $task->assigned_to !== $user->id || $task->type !== $user->role)) {
-            return response()->json(['message' => 'Solo puedes actualizar una tarea de tu tipo que esté asignada a ti.'], 403);
-        }
-
-        $allowed = match ($task->status) {
-            'pendiente', 'asignada' => ['en_progreso', 'cancelada'],
-            'en_progreso' => ['completada', 'cancelada'],
-            default => [],
-        };
-
-        if (! in_array($data['status'], $allowed, true)) {
-            return response()->json(['message' => 'La transición de estado solicitada no está permitida.'], 409);
-        }
-
         DB::transaction(function () use ($data, $task, $user, $isManager) {
             $task = Task::whereKey($task->id)->lockForUpdate()->firstOrFail();
             $room = Room::whereKey($task->room_id)->lockForUpdate()->firstOrFail();
             $status = $data['status'];
+            $claimUnassigned = ! $isManager
+                && $task->assigned_to === null
+                && $task->status === 'pendiente'
+                && $status === 'en_progreso'
+                && $task->type === $user->role;
 
-            if (! $isManager && ((int) $task->assigned_to !== $user->id || $task->type !== $user->role)) {
-                abort(403, 'La tarea ya no está asignada a ti.');
+            if (! $isManager && ! $claimUnassigned
+                && ((int) $task->assigned_to !== $user->id || $task->type !== $user->role)) {
+                abort(403, 'Solo puedes aceptar una tarea sin asignar de tu tipo o actualizar una asignada a ti.');
             }
             $allowed = match ($task->status) {
                 'pendiente', 'asignada' => ['en_progreso', 'cancelada'],
@@ -151,6 +152,7 @@ class TaskController extends Controller
 
             $task->update([
                 'status' => $status,
+                'assigned_to' => $claimUnassigned ? $user->id : $task->assigned_to,
                 'result' => $data['result'] ?? $task->result,
                 'started_at' => $status === 'en_progreso' ? ($task->started_at ?? now()) : $task->started_at,
                 'completed_at' => in_array($status, ['completada', 'cancelada'], true) ? now() : null,

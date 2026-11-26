@@ -16,7 +16,7 @@ class SaleController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Sale::with('items.product:id,name', 'user:id,name', 'stay.room:id,number')->latest();
+        $query = Sale::with('items.product:id,name', 'user:id,name', 'guest:id,name,document,phone,email', 'stay.room:id,number')->latest();
 
         if (! $request->user()->isAdmin()) {
             $query->where('user_id', $request->user()->id);
@@ -35,7 +35,7 @@ class SaleController extends Controller
             return response()->json(['message' => 'No tienes permiso para ver esta venta.'], 403);
         }
 
-        return response()->json($sale->load('items.product:id,name', 'user:id,name', 'stay.room:id,number'));
+        return response()->json($sale->load('items.product:id,name', 'user:id,name', 'guest:id,name,document,phone,email', 'stay.room:id,number'));
     }
 
     public function store(Request $request)
@@ -45,6 +45,10 @@ class SaleController extends Controller
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
+            'guest_id' => ['nullable', 'integer', 'exists:guests,id'],
+            'customer_name' => ['nullable', 'string', 'max:150'],
+            'customer_document' => ['nullable', 'string', 'max:50'],
+            'customer_phone' => ['nullable', 'string', 'max:40'],
         ]);
 
         $user = $request->user();
@@ -55,7 +59,15 @@ class SaleController extends Controller
             return response()->json(['message' => 'Debes abrir un turno antes de vender.'], 409);
         }
 
-        $sale = DB::transaction(function () use ($data, $user, $shift) {
+        $guest = ! empty($data['guest_id']) ? Guest::findOrFail($data['guest_id']) : null;
+        $customer = [
+            'guest_id' => $guest?->id,
+            'customer_name' => $guest?->name ?? ($data['customer_name'] ?? null),
+            'customer_document' => $guest?->document ?? ($data['customer_document'] ?? null),
+            'customer_phone' => $guest?->phone ?? ($data['customer_phone'] ?? null),
+        ];
+
+        $sale = DB::transaction(function () use ($data, $user, $shift, $customer) {
             // Junta líneas repetidas del mismo producto
             $quantities = collect($data['items'])
                 ->groupBy('product_id')
@@ -103,6 +115,7 @@ class SaleController extends Controller
             $sale = Sale::create([
                 'shift_id' => $shift->id,
                 'user_id' => $user->id,
+                ...$customer,
                 'total' => round($total, 2),
                 'payment_method' => $data['payment_method'],
                 'concept' => 'productos',
@@ -125,7 +138,7 @@ class SaleController extends Controller
             return $sale;
         });
 
-        return response()->json($sale->load('items.product:id,name'), 201);
+        return response()->json($sale->load('items.product:id,name', 'guest:id,name,document,phone,email'), 201);
     }
 
     public function cancel(Request $request, Sale $sale)
