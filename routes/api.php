@@ -70,11 +70,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/stays/{stay}/checkout', [StayController::class, 'checkout']);
     });
 
+    // Gestión de inventario: recepción registra productos y compras al recibir mercancía.
+    Route::middleware('role:admin,recepcionista')->group(function () {
+        Route::apiResource('products', ProductController::class)->except(['index', 'show']);
+        Route::apiResource('suppliers', SupplierController::class)->only(['index', 'store', 'update']);
+        Route::get('/purchases', [PurchaseController::class, 'index']);
+        Route::post('/purchases', [PurchaseController::class, 'store']);
+    });
+
     // Solo Administrador
     Route::middleware('role:admin')->group(function () {
         Route::apiResource('categories', CategoryController::class)->except(['index']);
-        Route::apiResource('products', ProductController::class)->except(['index', 'show']);
-        Route::apiResource('suppliers', SupplierController::class)->only(['index', 'store', 'update']);
         Route::apiResource('users', UserController::class)->only(['index', 'store', 'update']);
         Route::get('/inventory/movements', [InventoryMovementController::class, 'index']);
 
@@ -84,9 +90,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::post('/rates', [RateController::class, 'store']);
         Route::put('/rates/{rate}', [RateController::class, 'update']);
-
-        Route::get('/purchases', [PurchaseController::class, 'index']);
-        Route::post('/purchases', [PurchaseController::class, 'store']);
 
         Route::get('/shifts', [ShiftController::class, 'index']);
         Route::get('/shifts/{shift}', [ShiftController::class, 'show'])->whereNumber('shift');
