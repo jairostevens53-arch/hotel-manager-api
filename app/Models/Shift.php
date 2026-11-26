@@ -11,7 +11,8 @@ class Shift extends Model
 
     protected $fillable = [
         'user_id', 'opened_at', 'closed_at', 'opening_amount',
-        'expected_amount', 'counted_amount', 'difference', 'notes',
+        'opening_breakdown', 'expected_amount', 'counted_amount',
+        'counted_breakdown', 'difference', 'notes',
     ];
 
     protected function casts(): array
@@ -19,6 +20,8 @@ class Shift extends Model
         return [
             'opened_at' => 'datetime',
             'closed_at' => 'datetime',
+            'opening_breakdown' => 'array',
+            'counted_breakdown' => 'array',
         ];
     }
 
@@ -37,6 +40,11 @@ class Shift extends Model
         return $this->hasMany(Expense::class);
     }
 
+    public function purchases()
+    {
+        return $this->hasMany(Purchase::class);
+    }
+
     public function summary(): array
     {
         $sales = $this->sales()
@@ -47,6 +55,7 @@ class Shift extends Model
 
         $cashSales = (float) ($sales['efectivo'] ?? 0);
         $expenses = (float) $this->expenses()->sum('amount');
+        $purchases = (float) $this->purchases()->sum('total');
 
         return [
             'opening_amount' => round((float) $this->opening_amount, 2),
@@ -54,7 +63,32 @@ class Shift extends Model
             'card_sales' => round((float) ($sales['tarjeta'] ?? 0), 2),
             'transfer_sales' => round((float) ($sales['transferencia'] ?? 0), 2),
             'expenses' => round($expenses, 2),
-            'expected_amount' => round((float) $this->opening_amount + $cashSales - $expenses, 2),
+            'inventory_purchases' => round($purchases, 2),
+            'expected_amount' => round((float) $this->opening_amount + $cashSales - $expenses - $purchases, 2),
+        ];
+    }
+
+    public function transactionDetails(): array
+    {
+        return [
+            'sales' => $this->sales()
+                ->where('status', 'completada')
+                ->with([
+                    'items.product:id,name',
+                    'guest:id,name,document,phone',
+                    'stay.room:id,number',
+                    'user:id,name',
+                ])
+                ->orderBy('created_at')
+                ->get(),
+            'expenses' => $this->expenses()
+                ->with('user:id,name')
+                ->orderBy('created_at')
+                ->get(),
+            'purchases' => $this->purchases()
+                ->with('supplier:id,name', 'items.product:id,name', 'user:id,name')
+                ->orderBy('created_at')
+                ->get(),
         ];
     }
 }

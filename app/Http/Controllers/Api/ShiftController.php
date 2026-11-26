@@ -13,6 +13,10 @@ class ShiftController extends Controller
     {
         $data = $request->validate([
             'opening_amount' => ['required', 'numeric', 'min:0'],
+            'opening_breakdown' => ['nullable', 'array'],
+            'opening_breakdown.valores' => ['nullable', 'array'],
+            'opening_breakdown.valores.*' => ['numeric', 'min:0'],
+            'opening_breakdown.montoNoDesglosado' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $user = $request->user();
@@ -31,6 +35,7 @@ class ShiftController extends Controller
                 'user_id' => $user->id,
                 'opened_at' => now(),
                 'opening_amount' => $data['opening_amount'],
+                'opening_breakdown' => $data['opening_breakdown'] ?? null,
             ]);
 
             return response()->json($shift, 201);
@@ -47,13 +52,21 @@ class ShiftController extends Controller
             return response()->json(['message' => 'No tienes un turno abierto.'], 404);
         }
 
-        return response()->json($shift);
+        return response()->json([
+            'shift' => $shift->load('user:id,name'),
+            'summary' => $shift->summary(),
+            ...$shift->transactionDetails(),
+        ]);
     }
 
     public function close(Request $request)
     {
         $data = $request->validate([
             'counted_amount' => ['required', 'numeric', 'min:0'],
+            'counted_breakdown' => ['nullable', 'array'],
+            'counted_breakdown.valores' => ['nullable', 'array'],
+            'counted_breakdown.valores.*' => ['numeric', 'min:0'],
+            'counted_breakdown.montoNoDesglosado' => ['nullable', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
 
@@ -74,13 +87,17 @@ class ShiftController extends Controller
                 'closed_at' => now(),
                 'expected_amount' => $summary['expected_amount'],
                 'counted_amount' => $counted,
+                'counted_breakdown' => $data['counted_breakdown'] ?? null,
                 'difference' => round($counted - $summary['expected_amount'], 2),
                 'notes' => $data['notes'] ?? null,
             ]);
 
+            $shift = $shift->fresh();
+
             return response()->json([
-                'shift' => $shift->fresh(),
+                'shift' => $shift,
                 'summary' => $summary,
+                ...$shift->transactionDetails(),
             ]);
         });
     }
@@ -109,6 +126,7 @@ class ShiftController extends Controller
         return response()->json([
             'shift' => $shift->load('user:id,name'),
             'summary' => $shift->summary(),
+            ...$shift->transactionDetails(),
         ]);
     }
 }

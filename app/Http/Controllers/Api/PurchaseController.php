@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Purchase;
+use App\Models\Shift;
 use App\Models\InventoryMovement;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,11 @@ class PurchaseController extends Controller
             'items.*.unit_cost' => ['required', 'numeric', 'min:0'],
         ]);
 
-        $purchase = DB::transaction(function () use ($data, $request) {
+        $shift = Shift::where('user_id', $request->user()->id)
+            ->whereNull('closed_at')
+            ->first();
+
+        $purchase = DB::transaction(function () use ($data, $request, $shift) {
             $total = 0;
             $lines = [];
 
@@ -45,6 +50,7 @@ class PurchaseController extends Controller
             }
 
             $purchase = Purchase::create([
+                'shift_id' => $shift?->id,
                 'supplier_id' => $data['supplier_id'] ?? null,
                 'user_id' => $request->user()->id,
                 'total' => round($total, 2),

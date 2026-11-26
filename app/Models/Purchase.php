@@ -9,7 +9,12 @@ class Purchase extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['supplier_id', 'user_id', 'total'];
+    protected $fillable = ['shift_id', 'supplier_id', 'user_id', 'total'];
+
+    public function shift()
+    {
+        return $this->belongsTo(Shift::class);
+    }
 
     public function supplier()
     {
