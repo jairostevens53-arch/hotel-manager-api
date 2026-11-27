@@ -7,6 +7,7 @@ use App\Models\Room;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\CleaningTaskAssigner;
+use App\Services\ReservationRoomAssigner;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -175,6 +176,10 @@ class TaskController extends Controller
                 app(CleaningTaskAssigner::class)->dispatchWaiting();
             }
         });
+
+        if ($data['status'] === 'completada') {
+            app(ReservationRoomAssigner::class)->assignDue();
+        }
 
         return response()->json($task->fresh()->load('room', 'requester:id,name', 'assignee:id,name,role'));
     }

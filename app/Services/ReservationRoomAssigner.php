@@ -41,7 +41,7 @@ class ReservationRoomAssigner
                     ->where('active', true)
                     ->where('type', $reservation->room_type)
                     ->where('beds', $reservation->beds)
-                    ->where('status', '!=', 'mantenimiento')
+                    ->whereNotIn('status', ['mantenimiento', 'limpieza'])
                     ->orderBy('floor')
                     ->orderBy('number')
                     ->lockForUpdate()
