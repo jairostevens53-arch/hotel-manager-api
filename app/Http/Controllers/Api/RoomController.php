@@ -82,10 +82,16 @@ class RoomController extends Controller
             return response()->json(['message' => 'La habitación está ocupada: finaliza la estadía primero.'], 409);
         }
 
+        if ($room->status === 'limpieza') {
+            return response()->json([
+                'message' => 'La habitación solo queda disponible cuando la encargada finaliza su tarea de limpieza.',
+            ], 409);
+        }
+
         $role = $request->user()->role;
 
-        if ($role === 'limpieza' && ! ($room->status === 'limpieza' && $data['status'] === 'disponible')) {
-            return response()->json(['message' => 'Limpieza solo puede marcar disponible una habitación en limpieza.'], 403);
+        if ($role === 'limpieza') {
+            return response()->json(['message' => 'Finaliza la tarea asignada para liberar la habitación.'], 403);
         }
 
         if ($role === 'mantenimiento' && ! ($room->status === 'mantenimiento' && $data['status'] === 'disponible')) {

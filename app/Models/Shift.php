@@ -35,6 +35,11 @@ class Shift extends Model
         return $this->hasMany(Sale::class);
     }
 
+    public function stays()
+    {
+        return $this->hasMany(Stay::class);
+    }
+
     public function expenses()
     {
         return $this->hasMany(Expense::class);
@@ -71,6 +76,10 @@ class Shift extends Model
     public function transactionDetails(): array
     {
         return [
+            'stays' => $this->stays()
+                ->with('room:id,number', 'user:id,name')
+                ->orderBy('check_in_at')
+                ->get(),
             'sales' => $this->sales()
                 ->where('status', 'completada')
                 ->with([

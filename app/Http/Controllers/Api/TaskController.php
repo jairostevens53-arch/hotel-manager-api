@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Room;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\CleaningTaskAssigner;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -140,6 +141,12 @@ class TaskController extends Controller
                 && ((int) $task->assigned_to !== $user->id || $task->type !== $user->role)) {
                 abort(403, 'Solo puedes aceptar una tarea sin asignar de tu tipo o actualizar una asignada a ti.');
             }
+
+            if ($status === 'completada' && $task->type === 'limpieza'
+                && ($user->role !== 'limpieza' || (int) $task->assigned_to !== $user->id)) {
+                abort(403, 'Solo la encargada asignada puede finalizar esta tarea de limpieza.');
+            }
+
             $allowed = match ($task->status) {
                 'pendiente', 'asignada' => ['en_progreso', 'cancelada'],
                 'en_progreso' => ['completada', 'cancelada'],
@@ -162,6 +169,10 @@ class TaskController extends Controller
                 $room->update(['status' => 'disponible']);
             } elseif ($status === 'cancelada' && $room->status === $task->type) {
                 $room->update(['status' => $task->room_status_before ?? 'disponible']);
+            }
+
+            if ($status === 'completada' && $task->type === 'limpieza') {
+                app(CleaningTaskAssigner::class)->dispatchWaiting();
             }
         });
 

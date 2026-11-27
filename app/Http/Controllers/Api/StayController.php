@@ -14,6 +14,7 @@ use App\Models\Shift;
 use App\Models\Stay;
 use App\Models\StayCharge;
 use App\Models\Task;
+use App\Services\CleaningTaskAssigner;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -408,11 +409,13 @@ class StayController extends Controller
             $room->update(['status' => 'limpieza']);
 
             if (! Task::where('room_id', $room->id)->whereIn('status', ['pendiente', 'asignada', 'en_progreso'])->exists()) {
+                $cleaner = app(CleaningTaskAssigner::class)->next();
                 Task::create([
                     'room_id' => $room->id,
                     'requested_by' => $request->user()->id,
+                    'assigned_to' => $cleaner?->id,
                     'type' => 'limpieza',
-                    'status' => 'pendiente',
+                    'status' => $cleaner ? 'asignada' : 'pendiente',
                     'priority' => 'normal',
                     'description' => 'Limpieza requerida al finalizar la estadía.',
                     'room_status_before' => 'limpieza',
