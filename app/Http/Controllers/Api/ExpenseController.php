@@ -11,7 +11,7 @@ class ExpenseController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Expense::with('user:id,name')->latest();
+        $query = Expense::with(['user:id,name', 'shift:id,opened_at,closed_at'])->latest();
 
         if (! $request->user()->isAdmin()) {
             $query->where('user_id', $request->user()->id);
@@ -31,15 +31,16 @@ class ExpenseController extends Controller
             'amount' => ['required', 'numeric', 'gt:0'],
         ]);
 
-        $shift = Shift::where('user_id', $request->user()->id)->whereNull('closed_at')->first();
+        $user = $request->user();
+        $shift = Shift::where('user_id', $user->id)->whereNull('closed_at')->first();
 
-        if (! $shift) {
+        if (! $shift && ! $user->isAdmin()) {
             return response()->json(['message' => 'Debes abrir un turno antes de registrar gastos.'], 409);
         }
 
         $expense = Expense::create([
-            'shift_id' => $shift->id,
-            'user_id' => $request->user()->id,
+            'shift_id' => $shift?->id,
+            'user_id' => $user->id,
             'description' => $data['description'],
             'amount' => round((float) $data['amount'], 2),
         ]);
