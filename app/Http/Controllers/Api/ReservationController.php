@@ -9,6 +9,7 @@ use App\Models\Reservation;
 use App\Models\Sale;
 use App\Models\Shift;
 use App\Services\ReservationRoomAssigner;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -65,6 +66,15 @@ class ReservationController extends Controller
             'guests' => ['nullable', 'integer', 'min:1', 'max:10'],
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
+
+        // La API recibe instantes ISO (normalmente UTC), pero las columnas
+        // dateTime se guardan como hora local del hotel sin zona. Convertir
+        // antes de persistir evita desplazar la reserva al día siguiente.
+        foreach (['check_in_at', 'expected_checkout_at'] as $field) {
+            $data[$field] = Carbon::parse($data[$field])
+                ->setTimezone(config('app.timezone'))
+                ->format('Y-m-d H:i:s');
+        }
 
         $reservation = DB::transaction(function () use ($data, $request) {
             $guest = Guest::whereKey($data['guest_id'])->lockForUpdate()->first();
